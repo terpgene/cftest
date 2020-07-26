@@ -71,9 +71,6 @@ Resources:
       SubnetId: !Ref walletPublicSub2
       SecurityGroups: 
         - !Ref walletSecurityGroup1
-
-
-
   walletPrivateSub1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -92,21 +89,17 @@ Resources:
       GroupDescription: 'Specified securityGroup to access the servers' 
       SecurityGroupEgress:
         - IpProtocol: 'tcp'
-          FromPort: 443
           ToPort: 443
           CidrIp: !Select [0, !Ref ListOfIPs ]
         - IpProtocol: 'tcp'
-          FromPort: 80
           ToPort: 80
           CidrIp: !Select [1, !Ref ListOfIPs ]
       SecurityGroupIngress:
         - IpProtocol: 'tcp'
           FromPort: 443
-          ToPort: 443
           CidrIp: !Select [0, !Ref ListOfIPs ]
         - IpProtocol: 'tcp'
           FromPort: 80
-          ToPort: 80
           CidrIp: !Select [1, !Ref ListOfIPs ]
       VpcId: !Ref walletVPC
     DependsOn: 
