@@ -1,0 +1,257 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  "Create a Cloudformation template with the following characteristics:
+   a. One VPC, with both 2 public and 2 private subnets.
+   b. In the public subnets of the VPC, two always on ec2 servers (one in each),
+   and an AutoScaling setup to scale from those servers. They should also
+   have a load balancer setup on port 443 and port 80, which should
+   automatically integrate scaled servers. Scaling should happen at 70% cpu
+   load, and scale back down at 50% cpu load.
+   c. In the private subnet of the VPC, a 2 node aurora cluster accessible from
+   the public subnet servers and only those.
+   d. The load balancer should only be accessible on 443 and 80 by two IPs
+   available as parameters to the template and the servers themselves
+   should only allow access from the load balancer on those ports.
+   e. Public subnet servers should have IAM access to SES and SQS."
+Parameters:
+  ListOfIPs: 
+    Description: IP Address to access load balancer and servers
+    Type: CommaDelimitedList
+    Default: "example: 10.64.4.10/24, 10.64.8.10/24" 
+  KeyName:
+    Description: KeyPair to access the servers
+    Type: "AWS::EC2::KeyPair::KeyName"
+  InstanceType:
+    Description: "EC2 instance type"
+    Type: String
+    Default: t2.small
+  
+
+Resources:
+  walletVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.64.0.0/16
+      EnableDnsSupport: false
+  walletPublicSub1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref walletVPC
+      CidrBlock: 10.64.4.0/24
+      AvailabilityZone: 'us-east-1a'
+  wallPublicInstance1:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      AvailabilityZone: 'us-east-1a'
+      ImageId: 'ami-08f3d892de259504d'
+      InstanceInitiatedShutdownBehavior: 'stop'
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      Tenancy: default
+      SubnetId: !Ref walletPublicSub1
+      SecurityGroups: 
+        - !Ref walletSecurityGroup1
+
+      
+  walletPublicSub2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref walletVPC
+      CidrBlock: 10.64.8.0/24
+      AvailabilityZone: 'us-east-1a'
+  wallPublicInstance2:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      AvailabilityZone: 'us-east-1a'
+      ImageId: 'ami-08f3d892de259504d'
+      InstanceInitiatedShutdownBehavior: 'stop'
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      Tenancy: default
+      SubnetId: !Ref walletPublicSub2
+      SecurityGroups: 
+        - !Ref walletSecurityGroup1
+
+
+
+  walletPrivateSub1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref walletVPC
+      CidrBlock: 10.64.16.0/24
+      AvailabilityZone: 'us-east-1a'
+  walletPrivateSub2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref walletVPC
+      CidrBlock: 10.64.20.0/24
+      AvailabilityZone: 'us-east-1a'
+  walletSecurityGroup1:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: 'Specified securityGroup to access the servers' 
+      SecurityGroupEgress:
+        - IpProtocol: 'tcp'
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Select [0, !Ref ListOfIPs ]
+        - IpProtocol: 'tcp'
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Select [1, !Ref ListOfIPs ]
+      SecurityGroupIngress:
+        - IpProtocol: 'tcp'
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Select [0, !Ref ListOfIPs ]
+        - IpProtocol: 'tcp'
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Select [1, !Ref ListOfIPs ]
+      VpcId: !Ref walletVPC
+    DependsOn: 
+      - walletVPC
+  walletLoadBalancer:
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    Properties:
+      IpAddressType: 'ipv4'
+      Scheme: 'internal'
+      Subnets:
+        - !Ref walletPublicSub1
+      Type: network
+  walletLoadBalancerListener1:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      DefaultActions:
+        - Type: forward
+        - TargetGroupArn: !Ref walletLoadBalancerTargetGroup1
+      LoadBalancerArn: !Ref walletLoadBalancer
+      Port: '443'
+      Protocol: TCP
+  walletLoadBalancerListener2:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      DefaultActions:
+        - Type: forward 
+        - TargetGroupArn: !Ref walletLoadBalancerTargetGroup2
+      LoadBalancerArn: !Ref walletLoadBalancer
+      Port: '80'
+      Protocol: TCP
+  walletLoadBalancerTargetGroup1:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      Port: '443'
+      Protocol: TCP
+      VpcId: !Ref walletVPC
+  walletLoadBalancerTargetGroup2:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      Port: '80'
+      Protocol: TCP
+      VpcId: !Ref walletVPC
+
+  walletLaunchTemplate:
+    Type: "AWS::EC2::LaunchTemplate"
+    Properties:
+      LaunchTemplateData:
+        ImageId: 'ami-08f3d892de259504d'
+        InstanceType: !Ref InstanceType
+        DisableApiTermination: true
+        KeyName: !Ref KeyName
+        NetworkInterfaces:
+        - AssociatePublicIpAddress: "true"
+          InterfaceType: 'interface'
+          DeviceIndex: "0"
+          DeleteOnTermination: true
+        SecurityGroups:
+          - walletSecurityGroup1
+      LaunchTemplateName: walletLaunchTemplate
+      
+  
+  walletAutoScalingGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      AvailabilityZones: 
+        - 'us-east-1a'
+      DesiredCapacity: '2'
+      HealthCheckType: 'ELB'
+      LaunchTemplate: 
+        LaunchTemplateId: !Ref walletLaunchTemplate
+        Version: '001'
+      LoadBalancerNames:
+        - walletLoadBalancer
+      MaxSize: 5
+      MinSize: 2
+      VPCZoneIdentifier:
+        - !Ref walletPublicSub1
+        - !Ref walletPublicSub2
+    DependsOn: 
+      - walletVPC
+      
+  
+  walletAutoScalingUpPolicy:
+    Type: "AWS::AutoScaling::ScalingPolicy"
+    Properties:
+      AdjustmentType: 'ChangeInCapacity'
+      Cooldown: '1'
+      AutoScalingGroupName: !Ref walletAutoScalingGroup
+      ScalingAdjustment: 1
+  walletAutoScalingDownPolicy:
+    Type: "AWS::AutoScaling::ScalingPolicy"
+    Properties:
+      AdjustmentType: 'ChangeInCapacity'
+      Cooldown: 'l'
+      AutoScalingGroupName: !Ref walletAutoScalingGroup
+      ScalingAdjustment: -1
+
+  walletCPUUPAlarm:
+    Type: "AWS::CloudWatch::Alarm"
+    Properties:
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Threshold: '1'
+      Metrics:
+        - Id: CpuCheckSummary
+          Label: EC2 CPU Utilization
+          Expression: IF(cpu >= 70, 1, 0)
+          ReturnData: true
+        - Id: cpu 
+          MetricStat:
+            Metric:
+              Namespace: AWS/EC2
+              MetricName: CPUUtilization
+              Dimensions:
+              -  Name: walletAutoScalingGroup
+                 Value: !Ref walletAutoScalingGroup
+            Stat: Maximum
+            Period: 300
+#        ReturnData: False
+      AlarmDescription: "Alarm if CPU too high - 70%"
+      AlarmActions: !Ref walletAutoScalingUpPolicy
+
+  walletCPUDownAlarm:
+    Type: "AWS::CloudWatch::Alarm"
+    Properties:
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      ComparisonOperator: LessThanOrEqualToThreshold
+      Threshold: '1'
+      Metrics:
+        - Id: CpuCheck
+          Label: EC2 CPU Utilization
+          Expression: IF(cpu <= 50, 1, 0)
+          ReturnData: true
+        - Id: cpu 
+          MetricStat:
+            Metric:
+              Namespace: AWS/EC2
+              MetricName: CPUUtilization
+              Dimensions:
+              -  Name: walletAutoScalingGroup
+                 Value: !Ref walletAutoScalingGroup
+            Stat: Maximum
+            Period: 300
+#        ReturnData: False
+      AlarmDescription: "Alarm if CPU is below 50%"
+      AlarmActions: !Ref walletAutoScalingDownPolicy
