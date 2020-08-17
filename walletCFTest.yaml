@@ -33,56 +33,33 @@ Resources:
     Properties:
       CidrBlock: 10.64.0.0/16
       EnableDnsSupport: false
+  
   walletPublicSub1:
     Type: AWS::EC2::Subnet
     Properties:
+      AvailabilityZone: 'us-east-1a'
       VpcId: !Ref walletVPC
-      CidrBlock: 10.64.4.0/24
-      AvailabilityZone: 'us-east-1a'
-  wallPublicInstance1:
-    Type: "AWS::EC2::Instance"
-    Properties:
-      AvailabilityZone: 'us-east-1a'
-      ImageId: 'ami-08f3d892de259504d'
-      InstanceInitiatedShutdownBehavior: 'stop'
-      InstanceType: !Ref InstanceType
-      KeyName: !Ref KeyName
-      Tenancy: default
-      SubnetId: !Ref walletPublicSub1
-      SecurityGroups: 
-        - !Ref walletSecurityGroup1
-
+      CidrBlock: 10.64.4.0/22
       
   walletPublicSub2:
     Type: AWS::EC2::Subnet
     Properties:
+      AvailabilityZone: 'us-east-1a'
       VpcId: !Ref walletVPC
-      CidrBlock: 10.64.8.0/24
-      AvailabilityZone: 'us-east-1a'
-  wallPublicInstance2:
-    Type: "AWS::EC2::Instance"
-    Properties:
-      AvailabilityZone: 'us-east-1a'
-      ImageId: 'ami-08f3d892de259504d'
-      InstanceInitiatedShutdownBehavior: 'stop'
-      InstanceType: !Ref InstanceType
-      KeyName: !Ref KeyName
-      Tenancy: default
-      SubnetId: !Ref walletPublicSub2
-      SecurityGroups: 
-        - !Ref walletSecurityGroup1
+      CidrBlock: 10.64.8.0/22
+  
   walletPrivateSub1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref walletVPC
-      CidrBlock: 10.64.16.0/24
-      AvailabilityZone: 'us-east-1a'
+      CidrBlock: 10.64.16.0/22
+
   walletPrivateSub2:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref walletVPC
-      CidrBlock: 10.64.20.0/24
-      AvailabilityZone: 'us-east-1a'
+      CidrBlock: 10.64.20.0/22
+  
   walletSecurityGroup1:
     Type: "AWS::EC2::SecurityGroup"
     Properties:
@@ -90,20 +67,23 @@ Resources:
       SecurityGroupEgress:
         - IpProtocol: 'tcp'
           ToPort: 443
+          FromPort: 443
           CidrIp: !Select [0, !Ref ListOfIPs ]
         - IpProtocol: 'tcp'
           ToPort: 80
+          FromPort: 80
           CidrIp: !Select [1, !Ref ListOfIPs ]
       SecurityGroupIngress:
         - IpProtocol: 'tcp'
           FromPort: 443
+          ToPort: 443
           CidrIp: !Select [0, !Ref ListOfIPs ]
         - IpProtocol: 'tcp'
           FromPort: 80
+          ToPort: 80
           CidrIp: !Select [1, !Ref ListOfIPs ]
       VpcId: !Ref walletVPC
-    DependsOn: 
-      - walletVPC
+  
   walletLoadBalancer:
     Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
     Properties:
@@ -112,6 +92,7 @@ Resources:
       Subnets:
         - !Ref walletPublicSub1
       Type: network
+  
   walletLoadBalancerListener1:
     Type: "AWS::ElasticLoadBalancingV2::Listener"
     Properties:
@@ -121,21 +102,25 @@ Resources:
       LoadBalancerArn: !Ref walletLoadBalancer
       Port: '443'
       Protocol: TCP
+ 
   walletLoadBalancerListener2:
     Type: "AWS::ElasticLoadBalancingV2::Listener"
     Properties:
       DefaultActions:
         - Type: forward 
-        - TargetGroupArn: !Ref walletLoadBalancerTargetGroup2
+          TargetGroupArn: !Ref walletLoadBalancerTargetGroup2
       LoadBalancerArn: !Ref walletLoadBalancer
       Port: '80'
       Protocol: TCP
+ 
+ 
   walletLoadBalancerTargetGroup1:
     Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
     Properties:
       Port: '443'
       Protocol: TCP
       VpcId: !Ref walletVPC
+ 
   walletLoadBalancerTargetGroup2:
     Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
     Properties:
@@ -149,39 +134,30 @@ Resources:
       LaunchTemplateData:
         ImageId: 'ami-08f3d892de259504d'
         InstanceType: !Ref InstanceType
-        DisableApiTermination: true
         KeyName: !Ref KeyName
-        NetworkInterfaces:
-        - AssociatePublicIpAddress: "true"
-          InterfaceType: 'interface'
-          DeviceIndex: "0"
-          DeleteOnTermination: true
-        SecurityGroups:
-          - walletSecurityGroup1
+        SecurityGroupIds:
+          - !Ref walletSecurityGroup1
       LaunchTemplateName: walletLaunchTemplate
       
   
   walletAutoScalingGroup:
     Type: "AWS::AutoScaling::AutoScalingGroup"
     Properties:
-      AvailabilityZones: 
+      AvailabilityZones:
         - 'us-east-1a'
       DesiredCapacity: '2'
-      HealthCheckType: 'ELB'
       LaunchTemplate: 
         LaunchTemplateId: !Ref walletLaunchTemplate
         Version: '001'
       LoadBalancerNames:
-        - walletLoadBalancer
+        - !Ref walletLoadBalancer
       MaxSize: 5
       MinSize: 2
       VPCZoneIdentifier:
         - !Ref walletPublicSub1
         - !Ref walletPublicSub2
-    DependsOn: 
-      - walletVPC
       
-  
+
   walletAutoScalingUpPolicy:
     Type: "AWS::AutoScaling::ScalingPolicy"
     Properties:
@@ -189,6 +165,7 @@ Resources:
       Cooldown: '1'
       AutoScalingGroupName: !Ref walletAutoScalingGroup
       ScalingAdjustment: 1
+  
   walletAutoScalingDownPolicy:
     Type: "AWS::AutoScaling::ScalingPolicy"
     Properties:
@@ -219,7 +196,6 @@ Resources:
                  Value: !Ref walletAutoScalingGroup
             Stat: Maximum
             Period: 300
-#        ReturnData: False
       AlarmDescription: "Alarm if CPU too high - 70%"
       AlarmActions: !Ref walletAutoScalingUpPolicy
 
@@ -245,6 +221,25 @@ Resources:
                  Value: !Ref walletAutoScalingGroup
             Stat: Maximum
             Period: 300
-#        ReturnData: False
       AlarmDescription: "Alarm if CPU is below 50%"
       AlarmActions: !Ref walletAutoScalingDownPolicy
+  
+  wallPublicInstance1:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      AvailabilityZone: 'us-east-1a'
+      ImageId: 'ami-08f3d892de259504d'
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      Tenancy: default
+      SubnetId: !Ref walletPublicSub1
+
+  wallPublicInstance2:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      AvailabilityZone: 'us-east-1a'
+      ImageId: 'ami-08f3d892de259504d'
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      Tenancy: default
+      SubnetId: !Ref walletPublicSub2
